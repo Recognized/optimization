@@ -1,4 +1,7 @@
+import random
 from math import sqrt
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def dichotomy(a, b, f, eps):
@@ -20,7 +23,7 @@ def dichotomy(a, b, f, eps):
         fx2 = g(x2)
         if fx1 < fx2:
             b = x2
-        if fx2 < fx1:
+        if fx2 <= fx1:
             a = x1
     return {"answer": (a + b) / 2, "iterations": iterations, "calc": calc, "name": "dichotomy"}
 
@@ -46,7 +49,7 @@ def golden_section(a, b, f, eps):
             x1 = a + (3 - sqrt(5)) / 2 * (b - a)
             fx2 = fx1
             fx1 = g(x1)
-        elif fx2 < fx1:
+        elif fx2 <= fx1:
             a = x1
             x1 = x2
             x2 = a + (sqrt(5) - 1) / 2 * (b - a)
@@ -141,10 +144,10 @@ def task_1():
     b = 1000
 
     methods = [
-        lambda e: dichotomy(a, b, f, e),
-        lambda e: fibonacci(a, b, f, e),
-        lambda e: golden_section(a, b, f, e),
-        lambda e: straight(f, golden_section, e)
+        lambda s: dichotomy(a, b, f, s),
+        lambda s: fibonacci(a, b, f, s),
+        lambda s: golden_section(a, b, f, s),
+        lambda s: straight(f, golden_section, s)
     ]
 
     for method in methods:
@@ -152,5 +155,69 @@ def task_1():
             print(method(e))
 
 
+def circle(x, y):
+    return (y - 1) ** 2 + (x + 2) ** 2 / 4 + x + y + 1
+
+
+def grad_circle(x, y):
+    return (x + 4) / 2, 2 * y - 1
+
+
+def trace_grad_min(f, df, search, eps):
+    x = random.uniform(0, 1)
+    y = random.uniform(0, 1)
+
+    x_prev = None
+    y_prev = None
+
+    trace = [x, y]
+
+    iterations = 0
+    calc = 0
+    name = None
+
+    while x_prev is None or sqrt((x - x_prev) ** 2 + (y - y_prev) ** 2) >= eps:
+        print("x: {}, y: {}".format(x, y))
+        dx, dy = df(x, y)
+        iterations += 1
+
+        def best(s):
+            return f(x + dx * s, y + dy * s)
+
+        m = search(-1000, 1000, best, eps)
+        step = m["answer"]
+        name = m["name"]
+        calc += m["calc"]
+
+        x_prev = x
+        y_prev = y
+
+        x = x + dx * step
+        y = y + dy * step
+
+        trace.append((x, y))
+    return {"trace": trace, "calc": calc, "iterations": iterations, "name": name}
+
+
+def task_2():
+    for method in [dichotomy, lambda a, b, f, e: straight(f, golden_section, e), golden_section, fibonacci]:
+        m = trace_grad_min(circle, grad_circle, method, 0.0001)
+        trace = m["trace"]
+        m.pop("trace")
+        fig = plt.figure(figsize=(6, 5))
+        left, bottom, width, height = 0.1, 0.1, 0.8, 0.8
+        ax = fig.add_axes([left, bottom, width, height])
+        x_vals = np.arange(-10, 10, 0.1)
+        y_vals = np.arange(-10, 10, 0.1)
+        X, Y = np.meshgrid(x_vals, y_vals)
+
+        cp = ax.contour(X, Y, circle(X, Y))
+        ax.clabel(cp, inline=True, fontsize=10)
+        ax.set_title(m["name"])
+        plt.show()
+        print(m)
+
+
 if __name__ == '__main__':
-    task_1()
+    # task_1()
+    task_2()
