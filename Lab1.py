@@ -2,6 +2,8 @@ import random
 from math import sqrt
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.special import expit
+from scipy.linalg import cho_factor, cho_solve
 
 
 def dichotomy(a, b, f, eps):
@@ -165,8 +167,8 @@ def grad_circle(arg):
     return (x + 4) / 2, 2 * y - 1
 
 
-def gradient_descent(f, df, n, search, eps):
-    x = np.array([random.uniform(0, 1) for i in range(0, n)])
+def gradient_descent(f, df, start, search, eps):
+    x = start
 
     x_prev = None
 
@@ -205,7 +207,8 @@ def linear_step(method):
 
 def task_2():
     for method in [dichotomy, lambda a, b, f, e: straight(f, golden_section, e), golden_section, fibonacci]:
-        m = gradient_descent(circle, grad_circle, 2, linear_step(method), 0.0001)
+        start = np.random.normal(loc=0., scale=1., size=2)
+        m = gradient_descent(circle, grad_circle, start, linear_step(method), 0.0001)
         trace = m["trace"]
         m.pop("trace")
         fig = plt.figure(figsize=(6, 5))
@@ -224,6 +227,97 @@ def task_2():
         print(m)
 
 
+class LogReg:
+    def __init__(self, alpha, solver, max_errors=100):
+        assert solver in {'gradient', 'newton'}
+        self.alpha = alpha
+        self.w = None
+        self.solver = solver
+        self.max_errors = max_errors
+
+    def add_feature(self, X):
+        objects_count, _ = X.shape
+        ones = np.ones((objects_count, 1))
+        return np.hstack((X, ones))
+
+    def fit(self, X, y, eps=1e-5):
+        objects_count, features_count = X.shape
+        assert y.shape == (objects_count,)
+        X_r = self.add_feature(X)
+
+        def Q(weights):
+            predictions = np.matmul(X_r, weights)
+            margins = predictions * y
+            losses = np.logaddexp(0, -margins)
+            return (np.sum(losses) / objects_count) + (np.sum(weights ** 2) * self.alpha / 2)
+
+        A = np.transpose(X_r * y.reshape((objects_count, 1)))
+
+        def Q_grad(weights):
+            predictions = np.matmul(X_r, weights)
+            margins = predictions * y
+            b = expit(-margins)
+            grad = -np.matmul(A, b) / objects_count
+            return grad + self.alpha * weights
+
+        def Q_hess(weights):
+            predictions = np.matmul(X_r, weights)
+            margins = predictions * y
+            C = np.transpose(X_r * expit(-margins).reshape((objects_count, 1)))
+            D = X_r * expit(margins).reshape((objects_count, 1))
+            hess = np.matmul(C, D) / objects_count
+            return hess + self.alpha * np.eye(features_count + 1)
+
+        if self.solver == 'gradient':
+            trace = gradient_descent(Q, Q_grad, np.random.normal(loc=0., scale=1., size=features_count + 1), linear_step(golden_section), eps=eps)["trace"]
+            self.w = trace[-1]
+            return 0, len(trace)
+        else:
+            errors = 0
+            while True:
+                try:
+                    if errors >= self.max_errors:
+                        self.w = np.random.normal(loc=0., scale=1., size=features_count + 1)
+                        return errors, -1
+                    else:
+                        trace = newton(Q, Q_grad, Q_hess, np.random.normal(loc=0., scale=1., size=features_count + 1), eps=eps, cho=True)
+                        self.w = trace[-1]
+                        return errors, len(trace)
+                except ArithmeticError:
+                    errors += 1
+
+    def predict(self, X):
+        X_r = self.add_feature(X)
+        return np.sign(np.matmul(X_r, self.w)).astype(int)
+
+
+def newton(f, f_grad, f_hess, start, stop_criterion='delta', eps=1e-5, max_iters=100, cho=False):
+    assert stop_criterion in {'arg', 'value', 'delta'}
+    cur_arg = start
+    cur_value = f(cur_arg)
+    trace = [cur_arg]
+    while True:
+        cur_grad = f_grad(cur_arg)
+        cur_hess = f_hess(cur_arg)
+        if cho:
+            hess_inv = cho_solve(cho_factor(cur_hess), np.eye(cur_hess.shape[0]))
+        else:
+            hess_inv = np.linalg.inv(cur_hess)
+        cur_delta = np.matmul(cur_grad, hess_inv)
+        next_arg = cur_arg - cur_delta
+        next_value = f(next_arg)
+        trace.append(next_arg)
+
+        if len(trace) == max_iters:
+            raise ArithmeticError()
+
+        if (stop_criterion == 'arg' and np.linalg.norm(next_arg - cur_arg) < eps) or \
+                (stop_criterion == 'value' and abs(next_value - cur_value) < eps) or \
+                (stop_criterion == 'delta' and np.linalg.norm(cur_delta) < eps):
+            return trace
+        cur_arg = next_arg
+        cur_value = next_value
+    
 if __name__ == '__main__':
     # task_1()
     task_2()
