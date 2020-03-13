@@ -167,6 +167,16 @@ def grad_circle(arg):
     return (x + 4) / 2, 2 * y - 1
 
 
+def seadle(arg):
+    x, y = arg
+    return x ** 6 - x ** 3 + y ** 2
+
+
+def grad_seadle(arg):
+    x, y = arg
+    return 6 * x ** 5 - 3 * x ** 2, 2 * y
+
+
 def gradient_descent(f, df, start, search, eps):
     x = start
 
@@ -225,7 +235,7 @@ def armiho(e=0.1, l=1, d=0.95):
 
 
 def task_2():
-    start = np.random.normal(loc=0., scale=5., size=2)
+    start = np.random.normal(loc=0., scale=2., size=2)
 
     steps = [
         linear_step(dichotomy),
@@ -236,25 +246,26 @@ def task_2():
         armiho()
     ]
 
-    for step in steps:
-        m = gradient_descent(circle, grad_circle, start, step, 0.0001)
-        trace = m["trace"]
-        m.pop("trace")
-        fig = plt.figure(figsize=(6, 5))
-        left, bottom, width, height = 0.1, 0.1, 0.8, 0.8
-        ax = fig.add_axes([left, bottom, width, height])
-        x_val = np.arange(-10, 10, 0.1)
-        y_val = np.arange(-10, 10, 0.1)
-        X, Y = np.meshgrid(x_val, y_val)
+    for f, df in [(circle, grad_circle), (seadle, grad_seadle)]:
+        for step in steps:
+            m = gradient_descent(f, df, start, step, 0.0001)
+            trace = m["trace"]
+            m.pop("trace")
+            fig = plt.figure(figsize=(6, 5))
+            left, bottom, width, height = 0.1, 0.1, 0.8, 0.8
+            ax = fig.add_axes([left, bottom, width, height])
+            x_val = np.arange(-5, 5, 0.01)
+            y_val = np.arange(-5, 5, 0.01)
+            X, Y = np.meshgrid(x_val, y_val)
 
-        arg = [circle([x, y]) for x, y in zip(X, Y)]
+            arg = [f([x, y]) for x, y in zip(X, Y)]
 
-        cp = ax.contour(X, Y, arg)
-        ax.clabel(cp, inline=True, fontsize=10)
-        ax.plot(*np.array(trace).T)
-        ax.set_title(m["name"])
-        plt.show()
-        print(m)
+            cp = ax.contour(X, Y, arg)
+            ax.clabel(cp, inline=True, fontsize=10)
+            ax.plot(*np.array(trace).T)
+            ax.set_title(m["name"])
+            plt.show()
+            print(m)
 
 
 class LogReg:
@@ -351,6 +362,66 @@ def newton(f, f_grad, f_hess, start, stop_criterion='delta', eps=1e-5, max_iters
         cur_value = next_value
 
 
+def create_matrix(c, n):
+    log_cond_P = np.log(c)
+    exp_vec = np.arange(-log_cond_P / 4., log_cond_P * (n + 1) / (4 * (n - 1)), log_cond_P / (2. * (n - 1)))
+    s = np.exp(exp_vec)
+    S = np.diag(s)
+    U, _ = np.linalg.qr((np.random.rand(n, n) - 5.) * 200)
+    V, _ = np.linalg.qr((np.random.rand(n, n) - 5.) * 200)
+    P = U.dot(S).dot(V.T)
+    P = P.dot(P.T)
+    print(np.linalg.cond(P) - c)
+    return P
+
+
+def matrix_fn(c, n):
+    A = create_matrix(c, n)
+    b = np.random.randn(len(A))
+    f = lambda x: x.dot(A).dot(x) - b.dot(x)
+    f_grad = lambda x: (A + A.T).dot(x) - b
+    return A, f, f_grad
+
+
+def estimate(c, n, step_chooser, eps=0.0001, n_checks=100):
+    avg_iters = 0
+    name = ""
+    for _ in range(n_checks):
+        A, f, df = matrix_fn(c, n)
+        init_x = np.random.randn(len(A))
+
+        m = gradient_descent(f, df, init_x, step_chooser, eps)
+        name = m["name"]
+        avg_iters += len(m["trace"])
+    return avg_iters / n_checks, name
+
+
+def task_3():
+    steps = [
+        linear_step(dichotomy),
+        linear_step(lambda a, b, f, e: straight(f, golden_section, e)),
+        linear_step(golden_section),
+        linear_step(fibonacci),
+        # constant_step(0.001),
+        armiho()
+    ]
+    for n in range(3, 4):
+        fig, ax = plt.subplots()
+        ax.set_title("Number of iterations, n=%d" % n)
+        for step in steps:
+            y = []
+            x = []
+            name = ""
+            for k in range(1, 10):
+                r, name = estimate(k / 10.0, n, step)
+                y.append(r)
+                x.append(k / 10.0)
+            ax.plot(x, y, label=name)
+            ax.legend()
+        fig.show()
+
+
 if __name__ == '__main__':
     # task_1()
-    task_2()
+    # task_2()
+    task_3()
