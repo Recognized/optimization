@@ -155,63 +155,69 @@ def task_1():
             print(method(e))
 
 
-def circle(x, y):
+def circle(arg):
+    x, y = arg
     return (y - 1) ** 2 + (x + 2) ** 2 / 4 + x + y + 1
 
 
-def grad_circle(x, y):
+def grad_circle(arg):
+    x, y = arg
     return (x + 4) / 2, 2 * y - 1
 
 
-def trace_grad_min(f, df, search, eps):
-    x = random.uniform(0, 1)
-    y = random.uniform(0, 1)
+def gradient_descent(f, df, n, search, eps):
+    x = np.array([random.uniform(0, 1) for i in range(0, n)])
 
     x_prev = None
-    y_prev = None
 
-    trace = [x, y]
+    trace = [x]
 
     iterations = 0
     calc = 0
     name = None
 
-    while x_prev is None or sqrt((x - x_prev) ** 2 + (y - y_prev) ** 2) >= eps:
-        print("x: {}, y: {}".format(x, y))
-        dx, dy = df(x, y)
+    while x_prev is None or np.linalg.norm(np.subtract(x, x_prev)) >= eps:
+        dx = df(x)
         iterations += 1
 
-        def best(s):
-            return f(x + dx * s, y + dy * s)
-
-        m = search(-1000, 1000, best, eps)
+        m = search(x, f, dx, eps)
         step = m["answer"]
         name = m["name"]
         calc += m["calc"]
 
         x_prev = x
-        y_prev = y
 
-        x = x + dx * step
-        y = y + dy * step
+        x = x + np.multiply(dx, step)
 
-        trace.append((x, y))
+        trace.append(x)
     return {"trace": trace, "calc": calc, "iterations": iterations, "name": name}
+
+
+def linear_step(method):
+    def search(x, f, df, eps):
+        def best(s):
+            return f(x + np.multiply(s, df))
+
+        return method(-1000, 1000, best, eps)
+
+    return search
 
 
 def task_2():
     for method in [dichotomy, lambda a, b, f, e: straight(f, golden_section, e), golden_section, fibonacci]:
-        m = trace_grad_min(circle, grad_circle, method, 0.0001)
+        m = gradient_descent(circle, grad_circle, 2, linear_step(method), 0.0001)
         trace = m["trace"]
         m.pop("trace")
         fig = plt.figure(figsize=(6, 5))
         left, bottom, width, height = 0.1, 0.1, 0.8, 0.8
         ax = fig.add_axes([left, bottom, width, height])
-        x_vals = np.arange(-10, 10, 0.1)
-        y_vals = np.arange(-10, 10, 0.1)
-        X, Y = np.meshgrid(x_vals, y_vals)
+        x_val = np.arange(-10, 10, 0.1)
+        y_val = np.arange(-10, 10, 0.1)
+        X, Y = np.meshgrid(x_val, y_val)
 
-        cp = ax.contour(X, Y, circle(X, Y))
+        arg = [circle([x, y]) for x, y in zip(X, Y)]
+
+        cp = ax.contour(X, Y, arg)
         ax.clabel(cp, inline=True, fontsize=10)
         ax.set_title(m["name"])
         plt.show()
