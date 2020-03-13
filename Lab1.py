@@ -205,10 +205,39 @@ def linear_step(method):
     return search
 
 
+def constant_step(step):
+    def search(x, f, df, eps):
+        return {"answer": -step, "calc": 0, "name": "constant_step: %f" % step}
+
+    return search
+
+
+def armiho(e=0.1, l=1, d=0.95):
+    def search(x, f, df, eps):
+        t = l
+        calc = 0
+        while f(np.subtract(x, np.multiply(t, df))) > f(x) - e * t * np.linalg.norm(df) ** 2:
+            calc = calc + 1
+            t = t * d
+        return {"answer": -t, "calc": calc, "name": "armiho: e=%f, l=%f, d=%f" % (e, l, d)}
+
+    return search
+
+
 def task_2():
-    for method in [dichotomy, lambda a, b, f, e: straight(f, golden_section, e), golden_section, fibonacci]:
-        start = np.random.normal(loc=0., scale=1., size=2)
-        m = gradient_descent(circle, grad_circle, start, linear_step(method), 0.0001)
+    start = np.random.normal(loc=0., scale=5., size=2)
+
+    steps = [
+        linear_step(dichotomy),
+        linear_step(lambda a, b, f, e: straight(f, golden_section, e)),
+        linear_step(golden_section),
+        linear_step(fibonacci),
+        constant_step(0.001),
+        armiho()
+    ]
+
+    for step in steps:
+        m = gradient_descent(circle, grad_circle, start, step, 0.0001)
         trace = m["trace"]
         m.pop("trace")
         fig = plt.figure(figsize=(6, 5))
@@ -222,6 +251,7 @@ def task_2():
 
         cp = ax.contour(X, Y, arg)
         ax.clabel(cp, inline=True, fontsize=10)
+        ax.plot(*np.array(trace).T)
         ax.set_title(m["name"])
         plt.show()
         print(m)
@@ -269,7 +299,8 @@ class LogReg:
             return hess + self.alpha * np.eye(features_count + 1)
 
         if self.solver == 'gradient':
-            trace = gradient_descent(Q, Q_grad, np.random.normal(loc=0., scale=1., size=features_count + 1), linear_step(golden_section), eps=eps)["trace"]
+            trace = gradient_descent(Q, Q_grad, np.random.normal(loc=0., scale=1., size=features_count + 1),
+                                     linear_step(golden_section), eps=eps)["trace"]
             self.w = trace[-1]
             return 0, len(trace)
         else:
@@ -280,7 +311,8 @@ class LogReg:
                         self.w = np.random.normal(loc=0., scale=1., size=features_count + 1)
                         return errors, -1
                     else:
-                        trace = newton(Q, Q_grad, Q_hess, np.random.normal(loc=0., scale=1., size=features_count + 1), eps=eps, cho=True)
+                        trace = newton(Q, Q_grad, Q_hess, np.random.normal(loc=0., scale=1., size=features_count + 1),
+                                       eps=eps, cho=True)
                         self.w = trace[-1]
                         return errors, len(trace)
                 except ArithmeticError:
@@ -317,7 +349,8 @@ def newton(f, f_grad, f_hess, start, stop_criterion='delta', eps=1e-5, max_iters
             return trace
         cur_arg = next_arg
         cur_value = next_value
-    
+
+
 if __name__ == '__main__':
     # task_1()
     task_2()
