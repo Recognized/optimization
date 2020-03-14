@@ -1,9 +1,14 @@
 import random
 from math import sqrt
+import pandas as pd
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
+import sklearn.model_selection
 from scipy.special import expit
 from scipy.linalg import cho_factor, cho_solve
+from datetime import datetime
+import progressbar
 
 
 def dichotomy(a, b, f, eps):
@@ -27,6 +32,8 @@ def dichotomy(a, b, f, eps):
             b = x2
         if fx2 <= fx1:
             a = x1
+        if iterations > 100:
+            break
     return {"answer": (a + b) / 2, "iterations": iterations, "calc": calc, "name": "dichotomy"}
 
 
@@ -57,6 +64,8 @@ def golden_section(a, b, f, eps):
             x2 = a + (sqrt(5) - 1) / 2 * (b - a)
             fx1 = fx2
             fx2 = g(x2)
+        if iterations > 100:
+            break
     return {"answer": (a + b) / 2, "calc": calc, "iterations": iterations, "name": "golden_section"}
 
 
@@ -99,6 +108,9 @@ def fibonacci(a, b, f, eps):
             fx1 = fx2
             fx2 = g(x2)
         iterations += 1
+
+        if iterations > 100:
+            break
     return {"answer": (a + b) / 2, "calc": calc, "iterations": iterations, "name": "fibonacci"}
 
 
@@ -130,6 +142,9 @@ def straight(f, method, eps):
             f2 = f(b)
         d = d * 2
         calc += 1
+
+        if iterations > 100:
+            break
 
     m = method(a, b, f, eps)
     return {"answer": m["answer"], "calc": m["calc"] + calc, "iterations": m["iterations"] + iterations,
@@ -202,6 +217,9 @@ def gradient_descent(f, df, start, search, eps):
         x = x + np.multiply(dx, step)
 
         trace.append(x)
+
+        if iterations > 2000:
+            break
     return {"trace": trace, "calc": calc, "iterations": iterations, "name": name}
 
 
@@ -363,16 +381,19 @@ def newton(f, f_grad, f_hess, start, stop_criterion='delta', eps=1e-5, max_iters
 
 
 def create_matrix(c, n):
-    log_cond_P = np.log(c)
-    exp_vec = np.arange(-log_cond_P / 4., log_cond_P * (n + 1) / (4 * (n - 1)), log_cond_P / (2. * (n - 1)))
-    s = np.exp(exp_vec)
-    S = np.diag(s)
-    U, _ = np.linalg.qr((np.random.rand(n, n) - 5.) * 200)
-    V, _ = np.linalg.qr((np.random.rand(n, n) - 5.) * 200)
-    P = U.dot(S).dot(V.T)
-    P = P.dot(P.T)
-    print(np.linalg.cond(P) - c)
-    return P
+    r = sqrt(c)
+    A = np.random.randn(n, n)
+    u, s, v = np.linalg.svd(A)
+    h, l = np.max(s), np.min(s)  # highest and lowest eigenvalues (h / l = current cond number)
+
+    # linear stretch: f(x) = a * x + b, f(h) = h, f(l) = h/r, cond number = h / (h/r) = r
+    def f(x):
+        return h * (1 - ((r - 1) / r) / (h - l) * (h - x))
+
+    new_s = f(s)
+    new_A = (u * new_s) @ v.T  # make inverse transformation (here cond number is sqrt(k))
+    new_A = new_A @ new_A.T  # make matrix symmetric and positive semi-definite (cond number is just k)
+    return new_A
 
 
 def matrix_fn(c, n):
@@ -383,7 +404,7 @@ def matrix_fn(c, n):
     return A, f, f_grad
 
 
-def estimate(c, n, step_chooser, eps=0.0001, n_checks=100):
+def estimate(c, n, step_chooser, eps=0.0001, n_checks=20):
     avg_iters = 0
     name = ""
     for _ in range(n_checks):
@@ -405,23 +426,99 @@ def task_3():
         # constant_step(0.001),
         armiho()
     ]
-    for n in range(3, 4):
-        fig, ax = plt.subplots()
-        ax.set_title("Number of iterations, n=%d" % n)
-        for step in steps:
-            y = []
-            x = []
-            name = ""
-            for k in range(1, 10):
-                r, name = estimate(k / 10.0, n, step)
-                y.append(r)
-                x.append(k / 10.0)
-            ax.plot(x, y, label=name)
-            ax.legend()
-        fig.show()
+    i = 0
+    with progressbar.ProgressBar(max_value=5 * len(steps) * 25) as bar:
+        for n in [3, 10, 15, 20]:
+            fig, ax = plt.subplots()
+            ax.set_title("Number of iterations, n=%d" % n)
+            for step in steps:
+                y = []
+                x = []
+                name = ""
+                for k in np.linspace(1, 1000, 25):
+                    i += 1
+                    bar.update(i)
+                    r, name = estimate(k, n, step)
+                    y.append(r)
+                    x.append(k)
+                ax.plot(x, y, label=name)
+                ax.legend()
+            plt.show()
 
 
-if __name__ == '__main__':
+def read_dataset(path):
+    data = pd.read_csv(path)
+    X = data.iloc[:,3:-1].values
+    y = data.iloc[:, -1].apply(lambda c: 1 if c == 'P' else -1).values
+    return X, y
+
+
+def calc_f_score(X, y, alpha, solver):
+    n_splits = 5
+    cv = sklearn.model_selection.KFold(n_splits=n_splits, shuffle=True)
+    mean_f_score = 0.0
+    for train_indexes, test_indexes in cv.split(X):
+        X_train = X[train_indexes]
+        X_test = X[test_indexes]
+        y_train = y[train_indexes]
+        y_test = y[test_indexes]
+
+        classifier = LogReg(alpha, solver)
+        classifier.fit(X_train, y_train)
+        y_pred = classifier.predict(X_test)
+
+        tp = np.sum((y_pred == 1) & (y_test == 1))
+        fp = np.sum((y_pred == 1) & (y_test != 1))
+        tn = np.sum((y_pred != 1) & (y_test != 1))
+        fn = np.sum((y_pred != 1) & (y_test == 1))
+
+        if tp != 0:
+            precision = tp / (tp + fp)
+            recall = tp / (tp + fn)
+            f_score = 2 * precision * recall / (precision + recall)
+            mean_f_score += f_score
+    return mean_f_score / n_splits
+
+
+def get_best_param(X, y, solver):
+    best_alpha = None
+    max_f_score = -1
+    for alpha in [0.0001, 0.001, 0.01, 0.1, 1.]:
+        cur_f_score = calc_f_score(X, y, alpha, solver)
+        print('alpha =', alpha, 'f-score =', cur_f_score)
+        if cur_f_score > max_f_score:
+            max_f_score = cur_f_score
+            best_alpha = alpha
+    return best_alpha, max_f_score
+
+
+def process_with_solver(X, y, solver, step_x, step_y):
+    best_alpha, max_f_score = get_best_param(X, y, solver)
+    print('Best params:', best_alpha, max_f_score)
+    best_classifier = LogReg(best_alpha, solver)
+    start_time = datetime.now()
+    errors, steps = best_classifier.fit(X, y)
+    end_time = datetime.now()
+    timedelta = end_time - start_time
+    if solver == 'newton':
+        print('steps =', steps)
+    else:
+        print('steps =', steps)
+    print('time =', timedelta.microseconds / 1000.0, 'ms')
+
+
+def task_4a():
+    X, y = read_dataset('vowel.csv')
+    process_with_solver(X, y, 'gradient', 0.1, 0.01)
+
+
+def task_4b():
+    X, y = read_dataset('vowel.csv')
+    process_with_solver(X, y, 'newton', 0.1, 0.01)
+
+
+# if __name__ == '__main__':
     # task_1()
     # task_2()
-    task_3()
+    # task_4()
+
